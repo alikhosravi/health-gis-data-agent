@@ -1,0 +1,12 @@
+Flask
+pandas
+numpy
+scikit-learn
+psycopg2-binary
+google-genai
+openai
+SQLAlchemy
+geopandas
+shapely
+python-dotenv
+chromadb
