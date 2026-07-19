@@ -8,11 +8,11 @@ load_dotenv()
 
 # --- 1. DATABASE CONFIGURATION ---
 DB_CONFIG = {
-    "host": os.getenv("DB_HOST", "127.0.0.1"),
-    "user": os.getenv("DB_USER", "bigdata_local"),
-    "port": int(os.getenv("DB_PORT", 5432)),
-    "password": os.getenv("DB_PASSWORD", "1201"),
-    "database": os.getenv("DB_NAME", "Health")
+    "host": os.getenv("DB_HOST"),
+    "user": os.getenv("DB_USER"),
+    "port": int(os.getenv("DB_PORT")),
+    "password": os.getenv("DB_PASSWORD"),
+    "database": os.getenv("DB_NAME")
 }
 
 DB_URI = (
