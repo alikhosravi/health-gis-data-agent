@@ -1,0 +1,1748 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <title>AI Data Agent with Logs</title>
+    <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no">
+    <!-- Mapbox GL JS CSS -->
+    <link href="https://api.mapbox.com/mapbox-gl-js/v3.1.2/mapbox-gl.css" rel="stylesheet">
+    <!-- Mapbox GL JS Library -->
+    <script src="https://api.mapbox.com/mapbox-gl-js/v3.1.2/mapbox-gl.js"></script>
+    <!-- Chart.js Library -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+            overflow: hidden;
+        }
+
+        /* Map Container */
+        #map {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+        }
+
+        /* Container styles */
+        #ui-container {
+            position: absolute;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: min(92vw, 820px);
+        }
+
+        #mapLogo {
+            position: absolute;
+            top: 14px;
+            right: 88px;
+            z-index: 880;
+            width: 130px;
+            height: auto;
+            pointer-events: none;
+            user-select: none;
+        }
+
+        /* Simple table styles */
+        .info-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+            color: #334155;
+        }
+
+        .info-table th,
+        .info-table td {
+            border: 1px solid #e2e8f0;
+            padding: 6px;
+            text-align: left;
+        }
+
+        .info-table th {
+            background-color: #f8fafc;
+            position: sticky;
+            top: 0;
+        }
+
+        #responseBox.chart-expanded {
+            max-height: 90vh !important;
+            height: 90vh;
+        }
+
+        #chartControls button {
+            width: 30px;
+            height: 30px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
+            border: 1px solid #cbd5e1;
+            background: #ffffff;
+            color: #334155;
+            transition: background-color 0.2s ease;
+        }
+
+        #chartControls button:hover {
+            background: #f1f5f9;
+        }
+
+        #responseText {
+            padding-right: 84px;
+        }
+
+        /* Loading spinner */
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3b82f6;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+            display: none;
+            margin: 10px auto;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        @media (max-width: 700px) {
+            #ui-container {
+                width: calc(100% - 16px);
+                bottom: 14px;
+            }
+
+            #mapLogo {
+                width: 96px;
+                right: 74px;
+                top: 12px;
+            }
+        }
+    </style>
+
+</head>
+
+<body>
+    <div id="map"></div>
+    <div id="startupPrepMessage"
+        class="absolute left-1/2 top-4 z-[980] hidden -translate-x-1/2 rounded-lg border border-blue-200 bg-white/95 px-4 py-2 text-sm font-medium text-slate-700 shadow-md">
+        Preparing map data (states, counties, and census tracts). Please wait...
+    </div>
+    <img id="mapLogo" src="{{ url_for('static', filename='images/logo.png') }}" alt="My image">
+
+    <!-- Left Sidebar -->
+    <div id="leftSidebar"
+        class="absolute left-4 top-4 bottom-4 z-[900] w-80 max-w-[88vw] rounded-2xl border border-slate-200 bg-white/95 shadow-xl backdrop-blur">
+        <div class="border-b border-slate-200 px-4 py-3">
+            <h2 class="text-sm font-semibold text-slate-800">Control Center</h2>
+            <p class="text-xs text-slate-500">Map tools and runtime logs</p>
+        </div>
+        <div class="grid grid-cols-2 gap-2 border-b border-slate-200 p-2">
+            <button id="tabLayersBtn" onclick="switchSidebarTab('layers')"
+                class="rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-blue-700">Map
+                layers</button>
+            <button id="tabLogsBtn" onclick="switchSidebarTab('logs')"
+                class="rounded-lg bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-200">Thinking</button>
+        </div>
+        <div id="layersPanel" class="h-[calc(100%-118px)] overflow-y-auto p-4">
+            <div class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Base Maps</div>
+            <div id="baseMapOptions" class="relative mb-4">
+                <div class="flex items-center justify-between rounded-md border border-slate-200 bg-white px-2 py-1.5">
+                    <span id="baseMapCurrentLabel" class="text-xs font-semibold text-slate-700">Default</span>
+                    <button id="baseMapMenuBtn" onclick="toggleBaseMapMenu(event)"
+                        class="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700 hover:bg-slate-200">...</button>
+                </div>
+                <div id="baseMapMenu"
+                    class="absolute right-0 top-9 z-20 hidden w-36 rounded-md border border-slate-200 bg-white p-1 shadow-lg">
+                </div>
+            </div>
+            <div class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Active Layers</div>
+            <div id="mapLayerList" class="space-y-2"></div>
+        </div>
+        <div id="logsPanel" class="hidden h-[calc(100%-118px)] overflow-y-auto p-4">
+            <div id="logContent" class="space-y-2"></div>
+        </div>
+    </div>
+
+    <div id="mapLegends" class="absolute bottom-4 right-4 z-[850] max-h-[45vh] w-72 space-y-2 overflow-y-auto"></div>
+
+    <!-- Input and Button Overlay -->
+    <div id="ui-container">
+        <!-- Area to show the text/chart response -->
+        <div id="responseBox"
+            class="relative mb-3 hidden max-h-[400px] w-full overflow-y-auto rounded-xl border border-slate-200 bg-white/95 p-4 text-left shadow-lg">
+            <div id="chartControls" class="absolute right-3 top-3 hidden items-center gap-2">
+                <button id="expandChartBtn" type="button" onclick="toggleChartExpand()" title="Expand chart"
+                    aria-label="Expand chart">
+                    <span id="expandChartIcon" class="pointer-events-none"></span>
+                </button>
+                <button id="closeChartBtn" type="button" onclick="closeChartPanel()" title="Close chart"
+                    aria-label="Close chart">
+                    <span class="pointer-events-none">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M18 6 6 18"></path>
+                            <path d="m6 6 12 12"></path>
+                        </svg>
+                    </span>
+                </button>
+            </div>
+            <div id="responseText" class="mb-2 text-slate-700"></div>
+            <div id="loader" class="loader"></div>
+            <div id="vizContainer"></div>
+        </div>
+
+        <div id="inputBar"
+            class="flex w-full items-center gap-2 rounded-xl border border-slate-200 bg-white/95 p-2 shadow-lg">
+            <input type="text" id="infoInput" placeholder="Ask the Data Agent..."
+                class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-[15px] text-slate-700 outline-none ring-blue-200 transition focus:border-blue-500 focus:ring">
+            <button id="sendBtn" onclick="handleUserRequest()"
+                class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700">Send</button>
+        </div>
+    </div>
+
+    <script>
+        // --- CONFIGURATION ---
+        mapboxgl.accessToken = 'YOUR_MAPBOX_ACCESS_TOKEN';
+        const OPENAI_API_KEY = 'YOUR_OPENAI_API_KEY'; // <--- LOADED DYNAMICALLY FROM BACKEND .ENV
+        const OPENAI_MODEL = "YOUR_OPENAI_MODEL";
+        const BASE_MAP_STYLES = {
+            default: 'mapbox://styles/mapbox/streets-v12',
+            light: 'mapbox://styles/mapbox/light-v11',
+            dark: 'mapbox://styles/mapbox/dark-v11',
+            satellite: 'mapbox://styles/mapbox/satellite-streets-v12'
+        };
+        const BASE_MAP_LABELS = {
+            default: 'Default',
+            light: 'Light',
+            dark: 'Dark',
+            satellite: 'Satellite'
+        };
+        let currentBaseMap = 'default';
+
+        // --- MAP INITIALIZATION ---
+        const map = new mapboxgl.Map({
+            container: 'map',
+            style: BASE_MAP_STYLES[currentBaseMap],
+            center: [-98.5795, 39.8283], // Center of US
+            zoom: 3
+        });
+        map.addControl(new mapboxgl.NavigationControl());
+
+        let currentChart = null;
+        let isChartExpanded = false;
+        let mapLayerCounter = 0;
+        const persistentMapLayers = [];
+
+        const EXPAND_ICON_SVG = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M15 3h6v6"></path>
+                <path d="M9 21H3v-6"></path>
+                <path d="m21 3-7 7"></path>
+                <path d="m3 21 7-7"></path>
+            </svg>
+        `;
+        const COLLAPSE_ICON_SVG = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M9 3H3v6"></path>
+                <path d="M15 21h6v-6"></path>
+                <path d="m3 9 7-7"></path>
+                <path d="m21 15-7 7"></path>
+            </svg>
+        `;
+
+        // --- DATA SCHEMA ---
+        const DB_SCHEMA = {
+            "cdc_county_2025": "CDC PLACES health estimates (e.g., diabetes, obesity, depression) aggregated at the County level.",
+            "cdc_tract_2025": "CDC PLACES health estimates aggregated at the Census Tract level.",
+            "cdc_zipcode_2025": "CDC PLACES health estimates aggregated at the Zip Code (ZCTA) level.",
+            "block_groups": "Geographic boundaries and geometry definitions for Census Block Groups.",
+            "census_tracts": "Geographic boundaries and geometry definitions for Census Tracts.",
+            "counties": "Geographic boundaries, FIPS codes, and geometry definitions for US Counties.",
+            "states": "Geographic boundaries, FIPS codes, and geometry definitions for US States."
+        };
+
+        // --- GEOMETRY CACHE (BROWSER) ---
+        const GEOMETRY_CACHE_DB = 'health_geometry_cache';
+        const GEOMETRY_CACHE_STORE = 'datasets';
+        const GEOMETRY_CACHE_META_KEY = '__meta__';
+        const GEOMETRY_CACHE_VERSION = '2026-02-12-v1';
+        const GEOMETRY_TABLES = ['states', 'counties', 'census_tracts'];
+
+        const geometryLookup = {
+            loaded: false,
+            loadingPromise: null,
+            version: null,
+            indexes: {
+                states: new Map(),
+                counties: new Map(),
+                census_tracts: new Map()
+            }
+        };
+
+        function isFeatureCollection(payload) {
+            return payload && payload.type === 'FeatureCollection' && Array.isArray(payload.features);
+        }
+
+        function openGeometryCacheDb() {
+            return new Promise((resolve, reject) => {
+                if (!window.indexedDB) {
+                    reject(new Error('IndexedDB is not available in this browser.'));
+                    return;
+                }
+
+                const request = indexedDB.open(GEOMETRY_CACHE_DB, 1);
+                request.onupgradeneeded = () => {
+                    const db = request.result;
+                    if (!db.objectStoreNames.contains(GEOMETRY_CACHE_STORE)) {
+                        db.createObjectStore(GEOMETRY_CACHE_STORE, { keyPath: 'key' });
+                    }
+                };
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error || new Error('Failed to open geometry cache DB.'));
+            });
+        }
+
+        async function readGeometryCacheFromIndexedDb() {
+            const db = await openGeometryCacheDb();
+            try {
+                return await new Promise((resolve, reject) => {
+                    const tx = db.transaction(GEOMETRY_CACHE_STORE, 'readonly');
+                    const store = tx.objectStore(GEOMETRY_CACHE_STORE);
+                    const req = store.getAll();
+
+                    req.onsuccess = () => {
+                        const records = req.result || [];
+                        const byKey = {};
+                        records.forEach(record => { byKey[record.key] = record.value; });
+
+                        const datasets = {};
+                        GEOMETRY_TABLES.forEach(table => {
+                            datasets[table] = Array.isArray(byKey[table]) ? byKey[table] : [];
+                        });
+
+                        const hasAllTables = GEOMETRY_TABLES.every(table => Array.isArray(byKey[table]));
+                        resolve({
+                            meta: byKey[GEOMETRY_CACHE_META_KEY] || null,
+                            datasets,
+                            hasAllTables
+                        });
+                    };
+                    req.onerror = () => reject(req.error || new Error('Failed to read geometry cache.'));
+                });
+            } finally {
+                db.close();
+            }
+        }
+
+        async function writeGeometryCacheToIndexedDb(version, datasets) {
+            const db = await openGeometryCacheDb();
+            try {
+                await new Promise((resolve, reject) => {
+                    const tx = db.transaction(GEOMETRY_CACHE_STORE, 'readwrite');
+                    const store = tx.objectStore(GEOMETRY_CACHE_STORE);
+                    store.put({
+                        key: GEOMETRY_CACHE_META_KEY,
+                        value: { version, updatedAt: new Date().toISOString() }
+                    });
+                    GEOMETRY_TABLES.forEach(table => {
+                        store.put({ key: table, value: Array.isArray(datasets[table]) ? datasets[table] : [] });
+                    });
+
+                    tx.oncomplete = () => resolve();
+                    tx.onerror = () => reject(tx.error || new Error('Failed to write geometry cache.'));
+                    tx.onabort = () => reject(tx.error || new Error('Geometry cache write was aborted.'));
+                });
+            } finally {
+                db.close();
+            }
+        }
+
+        function normalizeGeometryDatasets(rawDatasets) {
+            const datasets = {};
+            GEOMETRY_TABLES.forEach(table => {
+                const rows = Array.isArray(rawDatasets?.[table]) ? rawDatasets[table] : [];
+                datasets[table] = rows;
+            });
+            return datasets;
+        }
+
+        function normalizeGeoidValue(rawGeoid) {
+            let id = String(rawGeoid ?? '').trim();
+            if (!id) return '';
+
+            if (/^\d+\.0+$/.test(id)) {
+                id = id.split('.')[0];
+            }
+
+            if (!/^\d+$/.test(id)) return id;
+            if (id.length === 1) return id.padStart(2, '0');
+            if (id.length === 4) return id.padStart(5, '0');
+            if (id.length === 10) return id.padStart(11, '0');
+            return id;
+        }
+
+        function hydrateGeometryLookupIndexes(datasets, version) {
+            GEOMETRY_TABLES.forEach(table => {
+                const index = new Map();
+                const rows = Array.isArray(datasets[table]) ? datasets[table] : [];
+                rows.forEach(row => {
+                    if (!row || row.geoid === null || row.geoid === undefined || !row.geometry) return;
+                    const normalizedGeoid = normalizeGeoidValue(row.geoid);
+                    if (!normalizedGeoid) return;
+                    index.set(normalizedGeoid, row.geometry);
+                });
+                geometryLookup.indexes[table] = index;
+            });
+
+            geometryLookup.version = version || GEOMETRY_CACHE_VERSION;
+            geometryLookup.loaded = true;
+        }
+
+        async function ensureGeometryCacheReady(forceRefresh = false) {
+            if (geometryLookup.loaded && !forceRefresh) return;
+            if (geometryLookup.loadingPromise && !forceRefresh) return geometryLookup.loadingPromise;
+
+            geometryLookup.loadingPromise = (async () => {
+                let localCache = null;
+                try {
+                    localCache = await readGeometryCacheFromIndexedDb();
+                } catch (e) {
+                    console.warn('Could not read browser geometry cache:', e);
+                }
+
+                if (!forceRefresh &&
+                    localCache &&
+                    localCache.hasAllTables &&
+                    localCache.meta &&
+                    localCache.meta.version === GEOMETRY_CACHE_VERSION) {
+                    hydrateGeometryLookupIndexes(localCache.datasets, localCache.meta.version);
+                    addLog('Geometry cache loaded from browser storage.');
+                    return;
+                }
+
+                addLog('Downloading boundary geometry cache...');
+                const response = await fetch('/geometry-cache');
+                if (!response.ok) throw new Error(`Geometry cache request failed: ${response.status}`);
+
+                const payload = await response.json();
+                const version = payload?.Version || GEOMETRY_CACHE_VERSION;
+                const datasets = normalizeGeometryDatasets(payload?.Datasets || {});
+
+                try {
+                    await writeGeometryCacheToIndexedDb(version, datasets);
+                } catch (e) {
+                    console.warn('Could not persist geometry cache to IndexedDB:', e);
+                    addLog('Browser storage unavailable. Geometry cache kept in memory for this session.');
+                }
+                hydrateGeometryLookupIndexes(datasets, version);
+
+                const featureCount = GEOMETRY_TABLES.reduce((sum, table) => sum + geometryLookup.indexes[table].size, 0);
+                addLog(`Geometry cache ready (${featureCount.toLocaleString()} features).`);
+            })()
+                .finally(() => {
+                    geometryLookup.loadingPromise = null;
+                });
+
+            return geometryLookup.loadingPromise;
+        }
+
+        function inferGeometryTableFromGeoid(geoid) {
+            const id = normalizeGeoidValue(geoid);
+            if (!id) return null;
+            if (id.length === 2) return 'states';
+            if (id.length === 5) return 'counties';
+            if (id.length === 11) return 'census_tracts';
+            return null;
+        }
+
+        function resolveGeometryForGeoid(geoid) {
+            const normalized = normalizeGeoidValue(geoid);
+            if (!normalized) return null;
+
+            const preferred = inferGeometryTableFromGeoid(normalized);
+            if (preferred && geometryLookup.indexes[preferred].has(normalized)) {
+                return geometryLookup.indexes[preferred].get(normalized);
+            }
+
+            for (const table of GEOMETRY_TABLES) {
+                const hit = geometryLookup.indexes[table].get(normalized);
+                if (hit) return hit;
+            }
+            return null;
+        }
+
+        function detectGeoidColumn(rows, preferredColumn = null) {
+            if (!Array.isArray(rows) || rows.length === 0) return null;
+            const keys = Object.keys(rows[0] || {});
+            if (preferredColumn && keys.includes(preferredColumn)) return preferredColumn;
+
+            const exact = keys.find(k => String(k).toLowerCase() === 'geoid');
+            if (exact) return exact;
+
+            return keys.find(k => String(k).toLowerCase().includes('geoid')) || null;
+        }
+
+        async function mapPayloadToGeoJson(mapPayload) {
+            if (isFeatureCollection(mapPayload)) return mapPayload;
+
+            if (!mapPayload || mapPayload.Mode !== 'GeoidRows') {
+                return { type: 'FeatureCollection', features: [] };
+            }
+
+            const rows = Array.isArray(mapPayload.Rows) ? mapPayload.Rows : [];
+            if (rows.length === 0) {
+                return { type: 'FeatureCollection', features: [] };
+            }
+
+            await ensureGeometryCacheReady();
+
+            const geoidColumn = detectGeoidColumn(rows, mapPayload.GeoidColumn);
+            if (!geoidColumn) {
+                addLog('Map payload did not include a GEOID column.');
+                return { type: 'FeatureCollection', features: [] };
+            }
+
+            const features = [];
+            let missingCount = 0;
+
+            rows.forEach(row => {
+                const rawGeoid = row[geoidColumn];
+                if (rawGeoid === null || rawGeoid === undefined) return;
+
+                const geoid = normalizeGeoidValue(rawGeoid);
+                if (!geoid) return;
+
+                const geometry = resolveGeometryForGeoid(geoid);
+                if (!geometry) {
+                    missingCount += 1;
+                    return;
+                }
+
+                const properties = { ...row, geoid };
+                delete properties[geoidColumn];
+
+                features.push({
+                    type: 'Feature',
+                    geometry,
+                    properties
+                });
+            });
+
+            if (missingCount > 0) {
+                addLog(`Skipped ${missingCount.toLocaleString()} row(s): GEOID not found in browser geometry cache.`);
+            }
+
+            return { type: 'FeatureCollection', features };
+        }
+
+        // --- LOG PANEL FUNCTIONS ---
+        function switchSidebarTab(tab) {
+            const layersPanel = document.getElementById('layersPanel');
+            const logsPanel = document.getElementById('logsPanel');
+            const layersBtn = document.getElementById('tabLayersBtn');
+            const logsBtn = document.getElementById('tabLogsBtn');
+
+            const activeBtn = "rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-blue-700";
+            const inactiveBtn = "rounded-lg bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-200";
+
+            if (tab === 'logs') {
+                logsPanel.classList.remove('hidden');
+                layersPanel.classList.add('hidden');
+                logsBtn.className = activeBtn;
+                layersBtn.className = inactiveBtn;
+            } else {
+                layersPanel.classList.remove('hidden');
+                logsPanel.classList.add('hidden');
+                layersBtn.className = activeBtn;
+                logsBtn.className = inactiveBtn;
+            }
+        }
+
+        function addLog(message) {
+            const logContent = document.getElementById('logContent');
+            const entry = document.createElement('div');
+            entry.className = 'rounded-lg border border-slate-200 bg-slate-50 p-2 text-xs text-slate-700';
+            const time = new Date().toLocaleTimeString();
+            entry.innerHTML = `<span class="mr-1 font-medium text-slate-500">[${time}]</span> ${message}`;
+            logContent.appendChild(entry);
+            const logsPanel = document.getElementById('logsPanel');
+            logsPanel.scrollTop = logsPanel.scrollHeight;
+        }
+
+        function clearLogs() {
+            document.getElementById('logContent').innerHTML = '';
+        }
+
+        function setChartControlsVisible(isVisible) {
+            const controls = document.getElementById('chartControls');
+            if (!controls) return;
+            controls.classList.toggle('hidden', !isVisible);
+            controls.classList.toggle('flex', isVisible);
+        }
+
+        function updateExpandButtonIcon() {
+            const icon = document.getElementById('expandChartIcon');
+            if (!icon) return;
+            icon.innerHTML = isChartExpanded ? COLLAPSE_ICON_SVG : EXPAND_ICON_SVG;
+        }
+
+        function updateChartContainerHeight(forceChart = false) {
+            const vizContainer = document.getElementById('vizContainer');
+            if (!vizContainer) return;
+
+            if (forceChart || currentChart) {
+                vizContainer.style.height = isChartExpanded ? 'calc(90vh - 140px)' : '320px';
+            } else {
+                vizContainer.style.height = '';
+            }
+        }
+
+        function setChartExpanded(expanded) {
+            isChartExpanded = Boolean(expanded);
+            const responseBox = document.getElementById('responseBox');
+            responseBox.classList.toggle('chart-expanded', isChartExpanded);
+            updateExpandButtonIcon();
+            updateChartContainerHeight();
+            if (currentChart) currentChart.resize();
+        }
+
+        function toggleChartExpand() {
+            if (!currentChart) return;
+            setChartExpanded(!isChartExpanded);
+        }
+
+        function closeChartPanel() {
+            if (currentChart) {
+                currentChart.destroy();
+                currentChart = null;
+            }
+            const responseBox = document.getElementById('responseBox');
+            const vizContainer = document.getElementById('vizContainer');
+            const responseText = document.getElementById('responseText');
+            vizContainer.innerHTML = '';
+            responseText.innerText = '';
+            setChartExpanded(false);
+            setChartControlsVisible(false);
+            responseBox.style.display = 'none';
+        }
+
+        function getLayerDisplayName(aiLayerName, userQuery, visualizationType) {
+            const fallbackFromQuery = (userQuery || 'Untitled layer').trim();
+            const cleanFallback = fallbackFromQuery.length > 42 ? `${fallbackFromQuery.slice(0, 42).trim()}...` : fallbackFromQuery;
+            const baseName = typeof aiLayerName === 'string' && aiLayerName.trim() ? aiLayerName.trim() : cleanFallback;
+            const suffix = visualizationType === 'heatmap' ? ' (Heatmap)' : '';
+            return `${baseName}${suffix}`.slice(0, 56);
+        }
+
+        function toggleBaseMapMenu(event) {
+            if (event) event.stopPropagation();
+            const menu = document.getElementById('baseMapMenu');
+            menu.classList.toggle('hidden');
+        }
+
+        function hideBaseMapMenu() {
+            document.getElementById('baseMapMenu').classList.add('hidden');
+        }
+
+        function updateBaseMapUI() {
+            const currentLabel = document.getElementById('baseMapCurrentLabel');
+            currentLabel.innerText = BASE_MAP_LABELS[currentBaseMap] || 'Default';
+
+            const menu = document.getElementById('baseMapMenu');
+            menu.innerHTML = '';
+            ['default', 'light', 'dark', 'satellite'].forEach(name => {
+                if (name === currentBaseMap) return;
+                const item = document.createElement('button');
+                item.className = 'block w-full rounded px-2 py-1 text-left text-xs font-semibold text-slate-700 hover:bg-slate-100';
+                item.innerText = BASE_MAP_LABELS[name];
+                item.onclick = () => {
+                    setBaseMap(name);
+                    hideBaseMapMenu();
+                };
+                menu.appendChild(item);
+            });
+        }
+
+        function setBaseMap(name) {
+            if (!BASE_MAP_STYLES[name]) return;
+            if (currentBaseMap === name) {
+                updateBaseMapUI();
+                return;
+            }
+            currentBaseMap = name;
+            updateBaseMapUI();
+            hideBaseMapMenu();
+            map.setStyle(BASE_MAP_STYLES[name]);
+
+            const restoreLayersAfterStyleChange = () => {
+                // Render from oldest -> newest so latest generated layer stays on top.
+                [...persistentMapLayers].reverse().forEach(layer => renderMapLayer(layer));
+                updateMapLayerList();
+                updateMapLegends();
+            };
+
+            map.once('idle', restoreLayersAfterStyleChange);
+        }
+
+        function updateMapLayerList() {
+            const list = document.getElementById('mapLayerList');
+            list.innerHTML = '';
+
+            if (persistentMapLayers.length === 0) {
+                const empty = document.createElement('div');
+                empty.className = 'rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3 text-xs text-slate-500';
+                empty.innerText = 'No map layers generated yet.';
+                list.appendChild(empty);
+                return;
+            }
+
+            persistentMapLayers.forEach(layer => {
+                const item = document.createElement('div');
+                item.className = 'rounded-lg border border-slate-200 bg-white p-2';
+
+                const row = document.createElement('div');
+                row.className = 'flex items-center justify-between gap-2';
+
+                const name = document.createElement('div');
+                name.className = 'truncate text-sm font-medium text-slate-700';
+                name.title = layer.name;
+                name.innerText = layer.name;
+
+                const controls = document.createElement('div');
+                controls.className = 'flex items-center gap-1';
+
+                const toggleBtn = document.createElement('button');
+                toggleBtn.className = `rounded-md px-2 py-1 text-xs font-semibold transition ${layer.visible ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`;
+                toggleBtn.innerText = layer.visible ? 'on' : 'off';
+                toggleBtn.onclick = () => toggleMapLayerVisibility(layer.id);
+
+                const moreBtn = document.createElement('button');
+                moreBtn.className = 'rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-200';
+                moreBtn.innerText = '...';
+                moreBtn.onclick = () => toggleLayerActions(layer.id);
+
+                controls.appendChild(toggleBtn);
+                controls.appendChild(moreBtn);
+                row.appendChild(name);
+                row.appendChild(controls);
+
+                const actions = document.createElement('div');
+                actions.id = `layer-actions-${layer.id}`;
+                actions.className = 'mt-2 hidden';
+
+                const deleteBtn = document.createElement('button');
+                deleteBtn.className = 'rounded-md bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-700 transition hover:bg-rose-100';
+                deleteBtn.innerText = 'Delete layer';
+                deleteBtn.onclick = () => deleteMapLayer(layer.id);
+
+                actions.appendChild(deleteBtn);
+                item.appendChild(row);
+                item.appendChild(actions);
+                list.appendChild(item);
+            });
+        }
+
+        function toggleLayerActions(layerId) {
+            persistentMapLayers.forEach(layer => {
+                const panel = document.getElementById(`layer-actions-${layer.id}`);
+                if (!panel) return;
+                if (layer.id === layerId) panel.classList.toggle('hidden');
+                else panel.classList.add('hidden');
+            });
+        }
+
+        function setMapLayerVisibility(layer, isVisible) {
+            layer.visible = isVisible;
+            layer.layerIds.forEach(layerId => {
+                if (map.getLayer(layerId)) {
+                    map.setLayoutProperty(layerId, 'visibility', isVisible ? 'visible' : 'none');
+                }
+            });
+            updateMapLegends();
+        }
+
+        function toggleMapLayerVisibility(layerId) {
+            const layer = persistentMapLayers.find(l => l.id === layerId);
+            if (!layer) return;
+            setMapLayerVisibility(layer, !layer.visible);
+            updateMapLayerList();
+        }
+
+        function deleteMapLayer(layerId) {
+            const idx = persistentMapLayers.findIndex(l => l.id === layerId);
+            if (idx === -1) return;
+
+            const layer = persistentMapLayers[idx];
+            if (layer.eventHandlers) {
+                layer.eventHandlers.forEach(h => {
+                    map.off('click', h.layerId, h.onClick);
+                    map.off('mouseenter', h.layerId, h.onEnter);
+                    map.off('mouseleave', h.layerId, h.onLeave);
+                });
+            }
+            layer.layerIds.forEach(id => {
+                if (map.getLayer(id)) map.removeLayer(id);
+            });
+            if (map.getSource(layer.sourceId)) map.removeSource(layer.sourceId);
+
+            persistentMapLayers.splice(idx, 1);
+            updateMapLayerList();
+            updateMapLegends();
+            addLog(`Deleted map layer: ${layer.name}`);
+        }
+
+        function escapeHtml(value) {
+            return String(value).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+        }
+
+        function buildFeaturePopupHtml(layerName, properties) {
+            const rows = Object.entries(properties || {}).map(([key, value]) => {
+                return `<tr><td style="padding:4px 8px;border:1px solid #e2e8f0;font-weight:600;color:#334155;">${escapeHtml(key)}</td><td style="padding:4px 8px;border:1px solid #e2e8f0;color:#475569;">${escapeHtml(value)}</td></tr>`;
+            }).join('');
+            return `<div style="font-family:ui-sans-serif,system-ui;min-width:220px;max-width:320px;">
+                <div style="font-weight:700;color:#1e293b;margin-bottom:8px;">${escapeHtml(layerName)}</div>
+                <table style="border-collapse:collapse;width:100%;font-size:12px;">${rows}</table>
+            </div>`;
+        }
+
+        function registerLayerInteractions(layerMeta) {
+            const handlers = [];
+            layerMeta.layerIds.forEach(layerId => {
+                const onClick = (e) => {
+                    const feature = e.features && e.features[0];
+                    if (!feature) return;
+                    const coords = e.lngLat;
+                    new mapboxgl.Popup({ closeButton: true, maxWidth: '360px' })
+                        .setLngLat(coords)
+                        .setHTML(buildFeaturePopupHtml(layerMeta.name, feature.properties || {}))
+                        .addTo(map);
+                };
+                const onEnter = () => { map.getCanvas().style.cursor = 'pointer'; };
+                const onLeave = () => { map.getCanvas().style.cursor = ''; };
+
+                map.on('click', layerId, onClick);
+                map.on('mouseenter', layerId, onEnter);
+                map.on('mouseleave', layerId, onLeave);
+                handlers.push({ layerId, onClick, onEnter, onLeave });
+            });
+            layerMeta.eventHandlers = handlers;
+        }
+
+        function updateMapLegends() {
+            const wrap = document.getElementById('mapLegends');
+            wrap.innerHTML = '';
+            const visibleLayers = persistentMapLayers.filter(l => l.visible);
+
+            visibleLayers.forEach(layer => {
+                const legend = layer.legend || {};
+                const card = document.createElement('div');
+                card.className = 'rounded-lg border border-slate-200 bg-white/95 p-3 shadow';
+
+                const title = document.createElement('div');
+                title.className = 'mb-1 text-xs font-semibold text-slate-700';
+                title.innerText = layer.name;
+                card.appendChild(title);
+
+                if (legend.colorProperty) {
+                    const prop = document.createElement('div');
+                    prop.className = 'mb-2 text-[11px] text-slate-500';
+                    prop.innerText = `${legend.visualizationType || 'choropleth'} • ${legend.colorProperty}`;
+                    card.appendChild(prop);
+
+                    const bar = document.createElement('div');
+                    bar.className = 'h-2 w-full rounded-full';
+                    if (legend.visualizationType === 'heatmap') {
+                        bar.style.background = 'linear-gradient(90deg, rgb(103,169,207), rgb(209,229,240), rgb(253,219,199), rgb(239,138,98), rgb(178,24,43))';
+                    } else {
+                        bar.style.background = 'linear-gradient(90deg, #ffffb2, #b10026)';
+                    }
+                    card.appendChild(bar);
+
+                    const range = document.createElement('div');
+                    range.className = 'mt-1 flex justify-between text-[11px] text-slate-500';
+                    range.innerHTML = `<span>${legend.min ?? '-'}</span><span>${legend.max ?? '-'}</span>`;
+                    card.appendChild(range);
+                } else {
+                    const noScale = document.createElement('div');
+                    noScale.className = 'text-[11px] text-slate-500';
+                    noScale.innerText = 'No numeric color scale';
+                    card.appendChild(noScale);
+                }
+                wrap.appendChild(card);
+            });
+        }
+
+        // --- UTILS ---
+        const analyzeDataUtils = {
+            getStats: (data) => {
+                if (!Array.isArray(data) || data.length === 0) return { columns: [], count: 0 };
+                const columns = Object.keys(data[0]);
+                const stats = {};
+
+                columns.forEach(col => {
+                    const values = data.map(d => d[col]);
+                    const validValues = values.filter(v => v !== null && v !== undefined && v !== "");
+
+                    if (validValues.length === 0) {
+                        stats[col] = { type: 'categorical', sample: [] };
+                        return;
+                    }
+
+                    const isNumeric = validValues.every(v => !isNaN(parseFloat(v)) && isFinite(v));
+
+                    if (isNumeric) {
+                        const numValues = validValues.map(v => parseFloat(v));
+                        stats[col] = {
+                            type: 'numeric',
+                            min: Math.min(...numValues),
+                            max: Math.max(...numValues)
+                        };
+                    } else {
+                        stats[col] = {
+                            type: 'categorical',
+                            sample: values.slice(0, 3)
+                        };
+                    }
+                });
+                return { columns, stats, count: data.length };
+            },
+
+            getGeoStats: (geoJson) => {
+                if (!geoJson.features || geoJson.features.length === 0) return { properties: [] };
+
+                const firstProps = geoJson.features[0].properties;
+                const columns = Object.keys(firstProps || {});
+                const stats = {};
+
+                columns.forEach(col => {
+                    const allValues = geoJson.features.map(f => f.properties[col]);
+                    const validValues = allValues.filter(v => v !== null && v !== undefined && v !== "");
+
+                    if (validValues.length === 0) {
+                        stats[col] = { type: 'categorical' };
+                        return;
+                    }
+
+                    const isNumeric = validValues.every(v => !isNaN(parseFloat(v)) && isFinite(v));
+
+                    if (isNumeric) {
+                        const numValues = validValues.map(v => parseFloat(v));
+                        stats[col] = {
+                            type: 'numeric',
+                            min: Math.min(...numValues),
+                            max: Math.max(...numValues)
+                        };
+                    } else {
+                        stats[col] = { type: 'categorical' };
+                    }
+                });
+                return { geometryType: geoJson.features[0].geometry.type, properties: stats };
+            }
+        };
+
+        // --- AI AGENT ---
+        class AIAgent {
+            constructor() { this.history = []; }
+
+            addToHistory(role, content) {
+                this.history.push({ role, content });
+                if (this.history.length > 10) this.history.shift();
+            }
+
+            async processQuery(userQuery) {
+                this.addToHistory('user', userQuery);
+                const lowerQuery = userQuery.toLowerCase().trim();
+
+                const greetings = ['hello', 'hi', 'hey', 'greetings'];
+                if (greetings.includes(lowerQuery) || greetings.some(g => lowerQuery.startsWith(g + ' '))) {
+                    return { type: 'local', message: "Hello! I am your Data Visualization Agent. I can help you visualize health data and geographic information. How can I help you today?" };
+                }
+
+                const schemaKeywords = ['database schema', 'available data', 'what tables', 'data structure'];
+                if (schemaKeywords.some(w => lowerQuery.includes(w))) {
+                    return { type: 'local', message: "Here is the available data:\n" + Object.entries(DB_SCHEMA).map(([k, v]) => `- **${k}**: ${v}`).join('\n') };
+                }
+
+                return { type: 'server' };
+            }
+
+            async callOpenAI(systemPrompt, userPrompt) {
+                if (!OPENAI_API_KEY) {
+                    console.warn("Missing OpenAI API Key");
+                    return null;
+                }
+
+                try {
+                    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${OPENAI_API_KEY}`
+                        },
+                        body: JSON.stringify({
+                            model: OPENAI_MODEL,
+                            messages: [
+                                { role: "system", content: systemPrompt },
+                                ...this.history,
+                                { role: "user", content: userPrompt }
+                            ],
+                            response_format: { type: "json_object" }
+                        })
+                    });
+                    const data = await response.json();
+                    if (data.error) {
+                        console.error("OpenAI Error:", data.error);
+                        return null;
+                    }
+                    return JSON.parse(data.choices[0].message.content);
+                } catch (e) {
+                    console.error("AI Network Error:", e);
+                    return null;
+                }
+            }
+        }
+
+        const agent = new AIAgent();
+
+        const infoInputEl = document.getElementById('infoInput');
+        if (infoInputEl) {
+            infoInputEl.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+                    event.preventDefault();
+                    handleUserRequest();
+                }
+            });
+        }
+
+        // --- MAIN HANDLER ---
+        async function handleUserRequest() {
+            const input = document.getElementById('infoInput');
+            const responseBox = document.getElementById('responseBox');
+            const responseText = document.getElementById('responseText');
+            const vizContainer = document.getElementById('vizContainer');
+            const loader = document.getElementById('loader');
+            const userQuery = input.value;
+
+            if (!userQuery) return;
+
+            responseBox.style.display = 'block';
+            responseText.innerText = '';
+            vizContainer.innerHTML = '';
+            loader.style.display = 'block';
+            setChartExpanded(false);
+            setChartControlsVisible(false);
+
+            if (currentChart) { currentChart.destroy(); currentChart = null; }
+
+            clearLogs();
+            addLog(`Request: ${userQuery}`);
+
+            const decision = await agent.processQuery(userQuery);
+
+            if (decision.type === 'local') {
+                loader.style.display = 'none';
+                responseText.innerText = decision.message;
+                setChartControlsVisible(false);
+                agent.addToHistory('assistant', decision.message);
+                switchSidebarTab('logs');
+                input.value = '';
+                return;
+            }
+
+            try {
+                let firstServerLogSeen = false;
+                const response = await fetch('/information', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ question: userQuery })
+                });
+
+                if (!response.ok) throw new Error(`Server Error: ${response.status}`);
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop();
+
+                    for (const line of lines) {
+                        if (!line.trim()) continue;
+                        try {
+                            const data = JSON.parse(line);
+
+                            if (data.Type === "Log") {
+                                if (!firstServerLogSeen) {
+                                    switchSidebarTab('logs');
+                                    firstServerLogSeen = true;
+                                }
+                                addLog(data.Data);
+                            }
+                            else if (data.Type === "Text") {
+                                loader.style.display = 'none';
+                                const msg = typeof data.Data === 'string' ? data.Data : JSON.stringify(data.Data);
+                                responseText.innerText = msg;
+                                setChartControlsVisible(false);
+                                agent.addToHistory('assistant', msg);
+                            }
+                            else if (data.Type === "Chart or Table") {
+                                loader.style.display = 'none';
+                                await handleChartResponse(userQuery, data.Data);
+                            }
+                            else if (data.Type === "Map") {
+                                loader.style.display = 'none';
+                                await handleMapResponse(userQuery, data.Data);
+                            }
+                        } catch (e) {
+                            console.error("JSON Parse Error on line:", line, e);
+                        }
+                    }
+                }
+
+                input.value = '';
+
+            } catch (error) {
+                console.error("Error:", error);
+                loader.style.display = 'none';
+                responseText.innerText = "Error communicating with server. Please check console.";
+            }
+        }
+
+        // --- VIZ LOGIC ---
+
+        async function handleChartResponse(userQuery, rawData) {
+            const vizContainer = document.getElementById('vizContainer');
+            vizContainer.innerHTML = '<div style="color:gray; font-style:italic;">Analyzing visualization options...</div>';
+            setChartExpanded(false);
+
+            const stats = analyzeDataUtils.getStats(rawData);
+            const queryLower = userQuery.toLowerCase();
+            const asksForScatter =
+                queryLower.includes('scatter') ||
+                queryLower.includes('scatter plot') ||
+                queryLower.includes('correlation');
+            const numericColumns = Object.entries(stats.stats || {})
+                .filter(([, meta]) => meta && meta.type === 'numeric')
+                .map(([name]) => name);
+
+            const systemPrompt = `You are a data visualization assistant.
+            User Query: "${userQuery}"
+            Data Stats: ${JSON.stringify(stats.stats)}
+            Data Count: ${stats.count}
+            
+            Rules:
+            1. If data.length > 1, choose best chart. "valueKey" must be numeric.
+            2. PIVOT RULE: If data.length == 1 AND multiple numeric columns exist, use "dataMode": "pivot".
+            3. If the user asks for scatter/correlation, choose "scatter" ONLY when there are at least two numeric columns.
+            4. For scatter, set "xKey" and "yKey" to numeric columns.
+            5. Default to "table" if unclear.
+            
+            Return JSON:
+            {
+                "visualizationType": "bar" | "line" | "pie" | "scatter" | "table",
+                "dataMode": "standard" | "pivot",
+                "xKey": "numeric_column_for_scatter_or_null",
+                "yKey": "numeric_column_for_scatter_or_null",
+                "labelKey": "col_name_or_axis_label",
+                "valueKey": "col_name_or_axis_label",
+                "seriesKey": "optional_group_column_for_multi_line",
+                "message": "Brief explanation"
+            }`;
+
+            const aiDecision = await agent.callOpenAI(systemPrompt, "Decide visualization.");
+
+            vizContainer.innerHTML = '';
+            const responseText = document.getElementById('responseText');
+
+            if (!aiDecision) {
+                if (responseText.innerText && responseText.innerText.trim()) {
+                    responseText.innerText += "\n\nShowing table.";
+                } else {
+                    responseText.innerText = "Showing table.";
+                }
+                showTable(rawData);
+                return;
+            }
+
+            const chartMessage = aiDecision.message || "Here is the visualization.";
+            if (responseText.innerText && responseText.innerText.trim()) {
+                responseText.innerText += "\n\n" + chartMessage;
+            } else {
+                responseText.innerText = chartMessage;
+            }
+            agent.addToHistory('assistant', aiDecision.message);
+
+            let chartData = rawData;
+            let chartLabelKey = aiDecision.labelKey;
+            let chartValueKey = aiDecision.valueKey;
+            let chartXKey = aiDecision.xKey || chartLabelKey;
+            let chartYKey = aiDecision.yKey || chartValueKey;
+            let chartSeriesKey = aiDecision.seriesKey;
+
+            if (aiDecision.dataMode === 'pivot' && rawData.length === 1) {
+                const row = rawData[0];
+                const newRows = [];
+                Object.keys(row).forEach(key => {
+                    const val = parseFloat(row[key]);
+                    if (!isNaN(val) && isFinite(val)) {
+                        const newObj = {};
+                        newObj[aiDecision.labelKey] = key;
+                        newObj[aiDecision.valueKey] = val;
+                        newRows.push(newObj);
+                    }
+                });
+                chartData = newRows;
+            }
+
+            const asksForMultiLine =
+                queryLower.includes('each line') ||
+                queryLower.includes('two lines') ||
+                queryLower.includes('multiple lines') ||
+                queryLower.includes('for each');
+
+            if (asksForScatter) {
+                if (numericColumns.length < 2) {
+                    responseText.innerText = "Scatter plot needs at least two numeric variables. Showing table.";
+                    showTable(rawData);
+                    return;
+                }
+
+                aiDecision.visualizationType = 'scatter';
+                if (!chartXKey || !numericColumns.includes(chartXKey)) {
+                    chartXKey = numericColumns[0];
+                }
+                if (!chartYKey || !numericColumns.includes(chartYKey) || chartYKey === chartXKey) {
+                    chartYKey = numericColumns.find(c => c !== chartXKey) || numericColumns[1];
+                }
+            }
+
+            if (!chartSeriesKey && aiDecision.visualizationType === 'line') {
+                chartSeriesKey = inferSeriesKey(chartData, chartLabelKey, chartValueKey);
+            }
+
+            if ((asksForMultiLine && chartSeriesKey) || chartSeriesKey) {
+                aiDecision.visualizationType = aiDecision.visualizationType === 'table' ? 'line' : aiDecision.visualizationType;
+            }
+
+            if (aiDecision.visualizationType === 'bar') showBarChart(chartData, chartLabelKey, chartValueKey);
+            else if (aiDecision.visualizationType === 'line') showLineChart(chartData, chartLabelKey, chartValueKey, chartSeriesKey);
+            else if (aiDecision.visualizationType === 'pie') showPieChart(chartData, chartLabelKey, chartValueKey);
+            else if (aiDecision.visualizationType === 'scatter') showScatterPlot(chartData, chartXKey, chartYKey);
+            else showTable(rawData);
+        }
+
+        async function handleMapResponse(userQuery, mapPayload) {
+            const responseText = document.getElementById('responseText');
+            responseText.innerText = "Preparing map geometry...";
+            setChartControlsVisible(false);
+            setChartExpanded(false);
+
+            let geoJson;
+            try {
+                geoJson = await mapPayloadToGeoJson(mapPayload);
+            } catch (error) {
+                console.error('Map payload conversion error:', error);
+                responseText.innerText = "Failed to build map geometry from cached boundaries.";
+                addLog(`Map conversion error: ${error.message}`);
+                return;
+            }
+
+            if (!geoJson || !Array.isArray(geoJson.features) || geoJson.features.length === 0) {
+                responseText.innerText = "No mappable features were found for this response.";
+                addLog('Map response had no usable geometries after GEOID lookup.');
+                return;
+            }
+
+            responseText.innerText = "Configuring map styles...";
+
+            const stats = analyzeDataUtils.getGeoStats(geoJson);
+
+            const systemPrompt = `You are a GIS visualization assistant.
+            User Query: "${userQuery}"
+            Geometry Type: ${stats.geometryType}
+            Feature Properties & Stats: ${JSON.stringify(stats.properties)}
+
+            Task: Configure the map visualization.
+            1. Choose a numeric property ("colorProperty") to colorize or weigh features.
+            2. Determine "min" and "max" values for the color scale based on stats.
+            3. HEATMAP TRIGGER: If user asks for "heatmap" or "heat map", set "visualizationType": "heatmap".
+            4. Otherwise default "visualizationType": "choropleth".
+            5. IGNORE null/categorical columns for coloring/weighing.
+            6. Create a concise human-friendly "layerName" based on user intent.
+            
+            Return JSON:
+            {
+                "visualizationType": "choropleth" | "heatmap",
+                "colorProperty": "property_name",
+                "min": number,
+                "max": number,
+                "layerName": "short layer label",
+                "message": "Brief explanation"
+            }`;
+
+            const aiDecision = await agent.callOpenAI(systemPrompt, "Configure map style.");
+
+            if (!aiDecision) {
+                if (responseText.innerText && responseText.innerText.trim() && responseText.innerText !== "Preparing map geometry...") {
+                    responseText.innerText += "\n\nShowing map data.";
+                } else {
+                    responseText.innerText = "Showing map data.";
+                }
+                const fallbackName = getLayerDisplayName("", userQuery, "choropleth");
+                showMapFeatures(geoJson, null, fallbackName);
+                return;
+            }
+
+            const mapMessage = aiDecision.message;
+            if (responseText.innerText && responseText.innerText.trim() && responseText.innerText !== "Preparing map geometry...") {
+                responseText.innerText += "\n\n" + mapMessage;
+            } else {
+                responseText.innerText = mapMessage;
+            }
+            agent.addToHistory('assistant', aiDecision.message);
+
+            const layerName = getLayerDisplayName(aiDecision.layerName, userQuery, aiDecision.visualizationType);
+            showMapFeatures(geoJson, aiDecision, layerName);
+        }
+
+        // --- RENDER FUNCTIONS ---
+
+        function createCanvas() {
+            const container = document.getElementById('vizContainer');
+            setChartControlsVisible(true);
+            updateChartContainerHeight(true);
+            const canvas = document.createElement('canvas');
+            canvas.style.width = '100%';
+            canvas.style.height = '100%';
+            container.appendChild(canvas);
+            return canvas;
+        }
+
+        function showBarChart(data, labelKey, valueKey) {
+            const ctx = createCanvas().getContext('2d');
+            currentChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: data.map(d => d[labelKey]),
+                    datasets: [{
+                        label: valueKey,
+                        data: data.map(d => d[valueKey]),
+                        backgroundColor: 'rgba(54, 162, 235, 0.6)',
+                        borderWidth: 1
+                    }]
+                },
+                options: { responsive: true, maintainAspectRatio: false }
+            });
+        }
+
+        function inferSeriesKey(data, labelKey, valueKey) {
+            if (!Array.isArray(data) || data.length === 0) return null;
+            const keys = Object.keys(data[0] || {});
+            const candidates = keys.filter(k => k !== labelKey && k !== valueKey);
+
+            for (const key of candidates) {
+                const values = data.map(d => d[key]).filter(v => v !== null && v !== undefined && v !== '');
+                if (values.length === 0) continue;
+                const unique = [...new Set(values.map(v => String(v)))];
+                if (unique.length > 1 && unique.length <= 12) return key;
+            }
+            return null;
+        }
+
+        function showLineChart(data, labelKey, valueKey, seriesKey = null) {
+            const ctx = createCanvas().getContext('2d');
+            const hasSeries = seriesKey && data.some(d => d[seriesKey] !== null && d[seriesKey] !== undefined && d[seriesKey] !== '');
+
+            if (!hasSeries) {
+                currentChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: data.map(d => d[labelKey]),
+                        datasets: [{
+                            label: valueKey,
+                            data: data.map(d => d[valueKey]),
+                            borderColor: 'rgba(75, 192, 192, 1)',
+                            tension: 0.1,
+                            fill: false
+                        }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false }
+                });
+                return;
+            }
+
+            const labelSet = [...new Set(data.map(d => d[labelKey]))];
+            const labelsAreNumeric = labelSet.every(v => !isNaN(parseFloat(v)) && isFinite(v));
+            const labels = labelsAreNumeric
+                ? labelSet.sort((a, b) => parseFloat(a) - parseFloat(b))
+                : labelSet.sort((a, b) => String(a).localeCompare(String(b)));
+
+            const seriesValues = [...new Set(data.map(d => d[seriesKey]).filter(v => v !== null && v !== undefined && v !== ''))];
+            const palette = [
+                'rgb(37, 99, 235)', 'rgb(220, 38, 38)', 'rgb(5, 150, 105)', 'rgb(202, 138, 4)',
+                'rgb(147, 51, 234)', 'rgb(14, 116, 144)', 'rgb(190, 24, 93)', 'rgb(75, 85, 99)'
+            ];
+
+            const datasets = seriesValues.map((seriesVal, i) => {
+                const byLabel = {};
+                data.forEach(row => {
+                    if (row[seriesKey] === seriesVal || String(row[seriesKey]) === String(seriesVal)) {
+                        byLabel[row[labelKey]] = parseFloat(row[valueKey]);
+                    }
+                });
+                return {
+                    label: String(seriesVal),
+                    data: labels.map(l => Number.isFinite(byLabel[l]) ? byLabel[l] : null),
+                    borderColor: palette[i % palette.length],
+                    backgroundColor: palette[i % palette.length],
+                    tension: 0.1,
+                    fill: false,
+                    spanGaps: true
+                };
+            });
+
+            currentChart = new Chart(ctx, {
+                type: 'line',
+                data: { labels, datasets },
+                options: { responsive: true, maintainAspectRatio: false }
+            });
+        }
+
+        function showPieChart(data, labelKey, valueKey) {
+            const ctx = createCanvas().getContext('2d');
+            const values = data.map(d => d[valueKey]);
+            const bgColors = values.map(() => `hsl(${Math.random() * 360}, 70%, 60%)`);
+
+            currentChart = new Chart(ctx, {
+                type: 'pie',
+                data: {
+                    labels: data.map(d => d[labelKey]),
+                    datasets: [{
+                        data: values,
+                        backgroundColor: bgColors
+                    }]
+                },
+                options: { responsive: true, maintainAspectRatio: false }
+            });
+        }
+
+        function showScatterPlot(data, xKey, yKey) {
+            const ctx = createCanvas().getContext('2d');
+            const points = (data || [])
+                .map(row => ({
+                    x: parseFloat(row[xKey]),
+                    y: parseFloat(row[yKey])
+                }))
+                .filter(p => Number.isFinite(p.x) && Number.isFinite(p.y));
+
+            currentChart = new Chart(ctx, {
+                type: 'scatter',
+                data: {
+                    datasets: [{
+                        label: `${yKey} vs ${xKey}`,
+                        data: points,
+                        backgroundColor: 'rgba(37, 99, 235, 0.7)',
+                        borderColor: 'rgba(37, 99, 235, 1)'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { title: { display: true, text: xKey } },
+                        y: { title: { display: true, text: yKey } }
+                    }
+                }
+            });
+        }
+
+        function showTable(data) {
+            const container = document.getElementById('vizContainer');
+            setChartControlsVisible(false);
+            if (!data || data.length === 0) return;
+
+            const table = document.createElement('table');
+            table.className = 'info-table';
+
+            const thead = table.createTHead();
+            const headerRow = thead.insertRow();
+            const keys = Object.keys(data[0]);
+            keys.forEach(key => {
+                const th = document.createElement('th');
+                th.innerText = key;
+                headerRow.appendChild(th);
+            });
+
+            const tbody = table.createTBody();
+            data.slice(0, 50).forEach(item => {
+                const row = tbody.insertRow();
+                keys.forEach(key => {
+                    const cell = row.insertCell();
+                    cell.innerText = item[key];
+                });
+            });
+            container.appendChild(table);
+        }
+
+        // --- MAP RENDERER (Choropleth + Heatmap) ---
+
+        function getCentroid(geometry) {
+            if (!geometry) return [0, 0];
+            if (geometry.type === 'Point') return geometry.coordinates;
+
+            // For Polygons/MultiPolygons, average the coordinates
+            let totalX = 0, totalY = 0, count = 0;
+
+            function traverse(coords, depth) {
+                if (depth === 0 && typeof coords[0] === 'number') {
+                    totalX += coords[0];
+                    totalY += coords[1];
+                    count++;
+                } else {
+                    coords.forEach(c => traverse(c, depth - 1));
+                }
+            }
+
+            let depth = 0;
+            if (geometry.type === 'LineString') depth = 1;
+            if (geometry.type === 'Polygon' || geometry.type === 'MultiLineString') depth = 2;
+            if (geometry.type === 'MultiPolygon') depth = 3;
+
+            traverse(geometry.coordinates, depth);
+            return count > 0 ? [totalX / count, totalY / count] : [0, 0];
+        }
+
+        function showMapFeatures(geoJsonData, config, layerName) {
+            if (!map.isStyleLoaded()) {
+                map.once('load', () => showMapFeatures(geoJsonData, config, layerName));
+                return;
+            }
+
+            const layerId = `server-data-${++mapLayerCounter}`;
+            const sourceId = `${layerId}-source`;
+            const layerMeta = {
+                id: layerId,
+                name: layerName || `Map Layer ${mapLayerCounter}`,
+                sourceId,
+                layerIds: [],
+                visible: true,
+                legend: {
+                    visualizationType: config?.visualizationType || 'choropleth',
+                    colorProperty: config?.colorProperty || null,
+                    min: config?.min,
+                    max: config?.max
+                },
+                config: config || null,
+                geoJsonData,
+                eventHandlers: []
+            };
+
+            renderMapLayer(layerMeta, true);
+
+            // Zoom to bounds
+            const bounds = new mapboxgl.LngLatBounds();
+            function extendBounds(coords) {
+                if (typeof coords[0] === 'number') {
+                    bounds.extend(coords);
+                } else {
+                    coords.forEach(extendBounds);
+                }
+            }
+
+            if (geoJsonData.features) {
+                geoJsonData.features.forEach(feature => {
+                    if (feature.geometry && feature.geometry.coordinates) {
+                        extendBounds(feature.geometry.coordinates);
+                    }
+                });
+            }
+
+            if (!bounds.isEmpty()) {
+                map.fitBounds(bounds, { padding: 50 });
+            }
+
+            persistentMapLayers.unshift(layerMeta);
+            addLog(`Added map layer: ${layerMeta.name}`);
+            switchSidebarTab('layers');
+            updateMapLayerList();
+            updateMapLegends();
+        }
+
+        function buildMapDataForLayer(layerMeta) {
+            const geoJsonData = layerMeta.geoJsonData;
+            const config = layerMeta.config;
+            let mapData = geoJsonData;
+            if (config && config.visualizationType === 'heatmap') {
+                const pointFeatures = geoJsonData.features.map(f => ({
+                    type: 'Feature',
+                    properties: f.properties,
+                    geometry: { type: 'Point', coordinates: getCentroid(f.geometry) }
+                }));
+                mapData = { type: 'FeatureCollection', features: pointFeatures };
+            }
+            return mapData;
+        }
+
+        function renderMapLayer(layerMeta) {
+            if (!map.isStyleLoaded()) return;
+            if (!layerMeta || !layerMeta.geoJsonData) return;
+
+            if (layerMeta.eventHandlers) {
+                layerMeta.eventHandlers.forEach(h => {
+                    try { map.off('click', h.layerId, h.onClick); } catch (_) { }
+                    try { map.off('mouseenter', h.layerId, h.onEnter); } catch (_) { }
+                    try { map.off('mouseleave', h.layerId, h.onLeave); } catch (_) { }
+                });
+            }
+
+            const mapData = buildMapDataForLayer(layerMeta);
+            if (!map.getSource(layerMeta.sourceId)) {
+                map.addSource(layerMeta.sourceId, { type: 'geojson', data: mapData });
+            } else {
+                map.getSource(layerMeta.sourceId).setData(mapData);
+            }
+
+            const config = layerMeta.config || null;
+            const baseId = layerMeta.id;
+            const layerIds = [];
+
+            if (config && config.visualizationType === 'heatmap') {
+                const heatmapLayerId = `${baseId}-heatmap`;
+                map.addLayer({
+                    id: heatmapLayerId,
+                    type: 'heatmap',
+                    source: layerMeta.sourceId,
+                    paint: {
+                        'heatmap-weight': [
+                            'interpolate', ['linear'], ['to-number', ['get', config.colorProperty]],
+                            config.min || 0, 0, config.max || 100, 1
+                        ],
+                        'heatmap-intensity': ['interpolate', ['linear'], ['zoom'], 0, 1, 9, 3],
+                        'heatmap-color': [
+                            'interpolate', ['linear'], ['heatmap-density'],
+                            0, 'rgba(33,102,172,0)', 0.2, 'rgb(103,169,207)', 0.4, 'rgb(209,229,240)',
+                            0.6, 'rgb(253,219,199)', 0.8, 'rgb(239,138,98)', 1, 'rgb(178,24,43)'
+                        ],
+                        'heatmap-radius': ['interpolate', ['linear'], ['zoom'], 0, 2, 9, 20],
+                        'heatmap-opacity': 0.8
+                    }
+                });
+                layerIds.push(heatmapLayerId);
+
+                const pointLayerId = `${baseId}-point`;
+                map.addLayer({
+                    id: pointLayerId,
+                    type: 'circle',
+                    source: layerMeta.sourceId,
+                    minzoom: 9,
+                    paint: {
+                        'circle-radius': 5,
+                        'circle-color': 'rgba(33,102,172,0.5)',
+                        'circle-stroke-width': 1,
+                        'circle-stroke-color': '#fff'
+                    }
+                });
+                layerIds.push(pointLayerId);
+            } else {
+                let fillColor = '#0080ff';
+                if (config && config.colorProperty) {
+                    fillColor = [
+                        'case',
+                        ['==', ['get', config.colorProperty], null],
+                        '#cfcfcf',
+                        ['interpolate', ['linear'], ['to-number', ['get', config.colorProperty]], config.min || 0, '#ffffb2', config.max || 100, '#b10026']
+                    ];
+                }
+
+                let lineWidth = 0.8;
+                if (layerMeta.geoJsonData && layerMeta.geoJsonData.features && layerMeta.geoJsonData.features.length > 0) {
+                    const firstFeat = layerMeta.geoJsonData.features[0];
+                    const geoid = firstFeat.properties?.geoid;
+                    if (geoid) {
+                        const len = String(geoid).length;
+                        if (len === 5 || len === 11) {
+                            lineWidth = 0.05; // Thinner border for county and tract levels
+                        }
+                    }
+                }
+
+                const fillLayerId = `${baseId}-fill`;
+                map.addLayer({
+                    id: fillLayerId,
+                    type: 'fill',
+                    source: layerMeta.sourceId,
+                    paint: { 'fill-color': fillColor, 'fill-opacity': 0.7 },
+                    filter: ['==', '$type', 'Polygon']
+                });
+                layerIds.push(fillLayerId);
+
+                const lineLayerId = `${baseId}-line`;
+                map.addLayer({
+                    id: lineLayerId,
+                    type: 'line',
+                    source: layerMeta.sourceId,
+                    paint: { 'line-color': '#9ca3af', 'line-width': lineWidth },
+                    filter: ['in', '$type', 'Polygon', 'LineString']
+                });
+                layerIds.push(lineLayerId);
+
+                const pointLayerId = `${baseId}-point`;
+                map.addLayer({
+                    id: pointLayerId,
+                    type: 'circle',
+                    source: layerMeta.sourceId,
+                    paint: {
+                        'circle-radius': 8,
+                        'circle-color': '#ff0000',
+                        'circle-stroke-width': 2,
+                        'circle-stroke-color': '#fff'
+                    },
+                    filter: ['==', '$type', 'Point']
+                });
+                layerIds.push(pointLayerId);
+            }
+
+            layerMeta.layerIds = layerIds;
+            layerMeta.visible = layerMeta.visible !== false;
+            if (!layerMeta.visible) setMapLayerVisibility(layerMeta, false);
+            registerLayerInteractions(layerMeta);
+        }
+
+        map.on('load', () => {
+            document.addEventListener('click', () => hideBaseMapMenu());
+            updateBaseMapUI();
+            updateMapLayerList();
+            updateMapLegends();
+            const prepMessage = document.getElementById('startupPrepMessage');
+            prepMessage.classList.remove('hidden');
+            ensureGeometryCacheReady().catch(error => {
+                console.error('Geometry cache warm-up error:', error);
+                addLog(`Geometry cache warm-up failed: ${error.message}`);
+            }).finally(() => {
+                prepMessage.classList.add('hidden');
+            });
+        });
+    </script>
+</body>
+
+</html>
