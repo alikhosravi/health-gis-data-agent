@@ -257,12 +257,7 @@ Before exposing the application publicly, consider:
 
 ## Contributing
 
-Issues and pull requests are welcome. When contributing a new dataset, please include:
-
-1. The database table and documented field definitions.
-2. Updated `schema.csv` metadata and a rebuilt Chroma index.
-3. At least one representative natural-language question.
-4. A verified expected SQL query and visualization type.
+Issues and pull requests are welcome.
 
 ---
 
